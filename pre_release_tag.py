@@ -71,12 +71,9 @@ def check_commit_id(last_git_tag):
     last_tag_commit_ID = commands_output(last_tag_commit_ID_cmd)
     develop_commit_ID_cmd = "git rev-parse origin/master"  # To get the develop commit ID.
     develop_commit_ID = commands_output(develop_commit_ID_cmd)
-    print("test1")
-    print(master_commit_ID , last_tag_commit_ID, develop_commit_ID)
     if not develop_commit_ID or not last_tag_commit_ID or not master_commit_ID:  # Null check for variables
         raise Exception('Commit id not found')
     if master_commit_ID == last_tag_commit_ID or develop_commit_ID != master_commit_ID:  # Check the commit id
-        print("test2")
         raise Exception('Commit id for master branch and last release tag is same  or else commit id of master branch and develop branch is not same .')
 
 #To create the tag and push to the remote origin
