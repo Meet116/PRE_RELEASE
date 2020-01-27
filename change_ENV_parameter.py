@@ -20,7 +20,6 @@ def main():
 def change_parameter_value():
     gocd_pipeline_name = os.environ['GO_PIPELINE_NAME']
     gocd_url = "http://username:password@localhost:8153/go/api/admin/pipelines/{}".format(gocd_pipeline_name) #gocd-URL Need to find the solution for gocd username and password
-    print(gocd_url)
     response = requests.get(gocd_url, headers={
         'Accept': 'application/vnd.go.cd.v10+json'})  # Change headers={'Accept': 'application/vnd.go.cd.v5+json'} for gocd version 18.6.0
     Etag_respose = requests.get(gocd_url, headers={
@@ -31,7 +30,6 @@ def change_parameter_value():
     for i in update_mesg['parameters']:
         if i['name'] == 'RELEASE':
             i['value'] = 'abc'
-    print(Etag_respose.headers.get('Etag'))
     update_respose_header = {'Accept': 'application/vnd.go.cd.v10+json', 'Content-Type': 'application/json',
                              'If-Match': '{}'.format(Etag_respose.headers.get(
                                  'Etag'))}  # Change headers={'Accept': 'application/vnd.go.cd.v5+json'} for gocd version 18.6.0
