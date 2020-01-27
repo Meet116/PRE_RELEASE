@@ -39,7 +39,6 @@ def check_commit_id(actuator_commit_id):
     :param actuator_commit_id:  Commit id form actuator URL
     """
     gocd_label_commit_id = os.environ['GO_PIPELINE_LABEL'].split("-")[-1]
-    print(gocd_label_commit_id, actuator_commit_id)
     if not actuator_commit_id:
         raise Exception('Empty actuator commit id please check...')
     if not gocd_label_commit_id:
