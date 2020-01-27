@@ -1,64 +1,49 @@
 import requests
-import json
-from copy import deepcopy
 import os
 import time
 
 def main():
     try:
-       change_parameter_value()
        actuator_url = os.environ["ACTUATOR_URL"]
-       check_actuator_url(actuator_url)
-       actuator_commit_id = get_commit_id(actuator_url)
+       actuator_commit_id=check_actuator_url_and_commit_id(actuator_url)
        check_commit_id(actuator_commit_id)
-
     except Exception as e:
         print("exception{}".format(e))
         raise e
 
-#To change the parameter value of the pipeline
-def change_parameter_value():
-    gocd_pipeline_name = os.environ['GO_PIPELINE_NAME']
-    gocd_url = "http://username:password@localhost:8153/go/api/admin/pipelines/{}".format(gocd_pipeline_name) #gocd-URL Need to find the solution for gocd username and password
-    response = requests.get(gocd_url, headers={
-        'Accept': 'application/vnd.go.cd.v10+json'})  # Change headers={'Accept': 'application/vnd.go.cd.v5+json'} for gocd version 18.6.0
-    Etag_respose = requests.get(gocd_url, headers={
-        'Accept': 'application/vnd.go.cd.v10+json'})  # Change headers={'Accept': 'application/vnd.go.cd.v5+json'} for gocd version 18.6.0
-    if response.status_code != 200:
-        raise Exception('GET /tasks/ {}'.format(response.status_code))
-    update_mesg = deepcopy(response.json())
-    for i in update_mesg['parameters']:
-        if i['name'] == 'RELEASE':
-            i['value'] = 'abc'
-    update_respose_header = {'Accept': 'application/vnd.go.cd.v10+json', 'Content-Type': 'application/json',
-                             'If-Match': '{}'.format(Etag_respose.headers.get(
-                                 'Etag'))}  # Change headers={'Accept': 'application/vnd.go.cd.v5+json'} for gocd version 18.6.0
-    update_resp = requests.put(gocd_url, data=json.dumps(update_mesg), headers=update_respose_header)
-    if update_resp.status_code != 200:
-        raise Exception('PUT /tasks/ {}'.format(response.status_code))
-
-def check_actuator_url(actuator_url):
-    delay_time = int(os.environ['SVC_CHECK_INTERVAL'])
-    thresold_time=int(os.environ['SVC_CHECK_THRESHOLD'])
-    if not delay_time or not thresold_time:
-        raise Exception("Please define the Interval and Thresold time in env variables.")
-    num_of_hits=int(thresold_time/delay_time)
-    tmp = 0
-    while tmp <= num_of_hits-1:
-        tmp = tmp + 1
+def check_actuator_url_and_commit_id(actuator_url):
+    """
+    To check the actuator url is up or not and fetch the last release commit id from that
+    :param actuator_url: Url of the actuator
+    :return:  Actuator commit id from actuator URL
+    """
+    delay_time = int(os.getenv('SVC_CHECK_INTERVAL','2'))
+    threshold_time=int(os.getenv('SVC_CHECK_THRESHOLD','6'))
+    num_of_hits=int(threshold_time/delay_time)
+    hits = 0
+    while hits <= num_of_hits-1:
+        hits = hits + 1
         time.sleep(delay_time)
-        response=requests.head(actuator_url)
+        response=requests.get(actuator_url)
         if response.status_code == 200:
             break
     if response.status_code != 200:
-        raise Exception('Website is not up status code - {}'.format(response.status_code))
-
-def get_commit_id(actuator_url):
-    response = requests.get(actuator_url)
+        raise Exception('Application down since past {} seconds. Please check'.format(threshold_time))
+    if not response and not response.json()['git']['commit']['id']['abbrev']:
+        raise Exception('Empty mesg in response commit id not found from actuator url')
     return response.json()['git']['commit']['id']['abbrev']
 
 def check_commit_id(actuator_commit_id):
-    gocd_label_commit_id = os.environ['GO_PIPELINE_LABEL'].split("-",2)
+    """
+    To verify the commit id of actuator with gocd label commt id
+    :param actuator_commit_id:  Commit id form actuator URL
+    """
+    gocd_label_commit_id = os.environ['GO_PIPELINE_LABEL'].split("-")[-1]
+    print(gocd_label_commit_id, actuator_commit_id)
+    if not actuator_commit_id:
+        raise Exception('Empty actuator commit id please check...')
+    if not gocd_label_commit_id:
+        raise Exception('Empty gocd label commit id please check...')
     if actuator_commit_id != gocd_label_commit_id :
         raise Exception("Latest release were not updated on server please check....")
 
