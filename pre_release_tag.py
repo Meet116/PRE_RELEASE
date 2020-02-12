@@ -1,4 +1,3 @@
-import argparse
 import os
 import subprocess
 from builtins import Exception
@@ -6,35 +5,75 @@ import re
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Deployment script for applications...')
-    parser.add_argument('--pre-release', action='store_true',
-                        help='Pre-release for the application')
-    parser.add_argument('--default', action='store_true',
-                        help='Default state')
-    args = parser.parse_args()
     try:
-        if args.pre_release :
-            release_version=fetch_release_version()
+        deploy_to = "_" + os.environ['DEPLOY_TO'].upper()
+        branch_name= os.environ['BRANCH']
+        gocd_label = os.environ['GO_PIPELINE_LABEL']
+        master_merge=os.getenv('MASTER_MERGE','false').upper()
+        if not branch_name:
+            raise Exception("Branch name not set in env variable. Please check.")
+        if deploy_to in ["_MY", "_MY2"]:
+            if master_merge == 'TRUE':
+                if not branch_name:
+                    raise Exception("Branch name not set in env variable. Please check.")
+                else:
+                    merge_master(branch_name)
+            release_version=fetch_release_version(gocd_label)
             last_git_tag=check_last_tag(release_version)
-            branch_name = os.getenv('BRANCH', 'master')
-            cmd = "git checkout {}".format(branch_name)  # To checkout to branchname.
-            subprocess.run([cmd], shell=True, check=True)
             release_mesg=generate_release_mesg(last_git_tag)
-            check_commit_id(last_git_tag)
-            gen_release_branch(release_version)
-            gen_tag(release_version,release_mesg)
+            gen_tag(release_version, release_mesg)
+        elif deploy_to == "_STAGING":
+            release_branch(gocd_label)
     except Exception as e:
         print("Exception occurred during application deployment :{}".format(e))
         raise e
 
+def release_branch(gocd_label):
+    """
+    To create the name of the release branch and fetch the version form gocd_label.
+    If the branch name already exists in repo it just print the mesg branch  already created.
+    :param gocd_label: Gocd label to fetch the version.
+    """
+    version = re.findall(r'^([0-9]+.[0-9]+.[0-9]+).', gocd_label)
+    if not version:
+        raise Exception("Please check the label .")
+    else:
+        last_release_branch_cmd = "git ls-remote --heads origin | grep 'release-*' | tail -1 | grep -E -o 'release-[0-9]+.[0-9]+.[0-9]+'"
+        last_release_branch = subprocess.check_output([last_release_branch_cmd], shell=True).decode('ascii').strip()
+        release_branch = "release-{}".format(version[0])
+        patch=re.findall(r'([0-9]+$)',release_branch)
+        if last_release_branch == release_branch or patch[0] != '0':
+            print("Branch already created")
+        else:
+            create_release_branch(release_branch)
 
-def fetch_release_version() :
+def create_release_branch(release_branch):
+    """
+    To checkout and push the release branch to the repository.
+    :param release_branch: Release branch name.
+    """
+    release_branch_cmd = "git checkout -b {}".format(release_branch)
+    subprocess.run([release_branch_cmd], shell=True, check=True)
+    release_branch_push_cmd = "git push origin {}".format(release_branch)
+    subprocess.run([release_branch_push_cmd], shell=True, check=True)
+
+def merge_master(branch_name):
+    """
+    Merge the branch to the master branch in remote repo.
+    :param branch_name: Branch name to be merged.
+    """
+    checkout_master="git checkout master"
+    subprocess.run([checkout_master], shell=True, check=True)
+    merge_to_master="git merge origin/{}".format(branch_name)
+    subprocess.run([merge_to_master] ,shell=True , check=True)
+    push_to_master="git push origin master"
+    subprocess.run([push_to_master], shell=True, check=True)
+
+def fetch_release_version(gocd_label) :
     """
     Fetch the release version from the GOCD label
     :return: release version name
     """
-    gocd_label = os.environ['GO_PIPELINE_LABEL']
     version = re.findall(r'^([0-9]+.[0-9]+.[0-9]+).', gocd_label)  # To fetch the verison from gocd label.
     if not version:
         raise Exception('Could not fetch semantic version from the GoCD label. Please check the Release Label used during build.')
@@ -49,9 +88,9 @@ def check_last_tag(release_version):
     :return: last released tag
     """
     cmd="git for-each-ref --sort=taggerdate --format '%(refname) %(taggerdate)' refs/tags/[0-9]* | tail -1 | grep -E -o '[0-9]+.[0-9]+.[0-9]+' | head -1"
-    last_tag=commands_output(cmd)
-    if last_tag == release_version :
-        raise Exception("Tag name already initialize please check")
+    last_tag=subprocess.check_output([cmd], shell=True).decode('ascii').strip()
+    if not last_tag:
+        raise Exception("Last tag not found . Please check")
     return last_tag
 
 def generate_release_mesg(last_git_tag):
@@ -62,9 +101,9 @@ def generate_release_mesg(last_git_tag):
     """
 
     feature_release_cmd='git log --pretty="%h - %s (%an)" {}..HEAD | grep "Merge pull request" | grep -E -o "(feature).*$" | grep -E -o "(WEB).*" | sed "s/-/:/2" | uniq'.format(last_git_tag) #To fetch the feature release mesg
-    feature_release_note=commands_output(feature_release_cmd)
+    feature_release_note=subprocess.check_output([feature_release_cmd], shell=True).decode('ascii').strip()
     bug_release_cmd='git log --pretty="%h - %s (%an)" {}..HEAD | grep "Merge pull request" | grep -E -o "(bug).*$" | grep -E -o "(WEB).*" | sed "s/-/:/2" | uniq'.format(last_git_tag) #To fetch the bug release mesg
-    bug_release_note=commands_output(bug_release_cmd)
+    bug_release_note=subprocess.check_output([bug_release_cmd], shell=True).decode('ascii').strip()
     if not bug_release_note and feature_release_note:
         return "Feature release:- \n{}".format(feature_release_note)
     elif not feature_release_note and bug_release_note:
@@ -73,26 +112,6 @@ def generate_release_mesg(last_git_tag):
         return ('Empty release notes')
     else:
         return "Feature release:- \n{} \nDefects fixed:- \n{}".format(feature_release_note,bug_release_note)
-
-def check_commit_id(last_git_tag):
-    """
-    To check the commit IDs of master develop and last released tags
-    :param last_git_tag: Last releaed tag name
-    """
-    master_commit_ID_cmd = "git rev-parse origin/master"  # To get the master commit ID
-    master_commit_ID = commands_output(master_commit_ID_cmd)
-    last_tag_commit_ID_cmd = "git rev-list -n 1 {}".format(last_git_tag)  # To get the last tag commit ID
-    last_tag_commit_ID = commands_output(last_tag_commit_ID_cmd)
-    if not last_tag_commit_ID or not master_commit_ID:  # Null check for variables
-        raise Exception('Commit id not found')
-    if master_commit_ID == last_tag_commit_ID :  # Check the commit id
-        raise Exception('No changes detected as compared to latest release. Please check for any pending MR to master and try again.')
-
-def gen_release_branch(release_version):
-    release_branch_cmd="git checkout -b release-{}".format(release_version)
-    subprocess.run([release_branch_cmd], shell=True, check=True)
-    release_branch_push_cmd="git push origin release-{}".format(release_branch_cmd)
-    subprocess.run([release_branch_push_cmd], shell=True , check=True)
 
 def gen_tag(release_version,release_mesg):
     """
@@ -105,17 +124,6 @@ def gen_tag(release_version,release_mesg):
     push_tag_cmd="git push origin {} ".format(release_version)
     subprocess.run([push_tag_cmd], shell=True, check=True)
 
-#To store the output of the commands in variables
-def commands_output(cmd):
-    """
-    To store the output of the commands in variables.
-    :param cmd: commands that need to be run
-    :return: output of the commands
-    """
-    output=subprocess.check_output([cmd], shell=True).decode('ascii').strip()
-    if not output:
-        raise Exception('Empty mesg please check...')
-    return output
 
 if __name__ == "__main__":
     main()
