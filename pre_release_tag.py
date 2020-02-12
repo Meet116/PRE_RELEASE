@@ -34,15 +34,14 @@ def release_branch(gocd_label):
     If the branch name already exists in repo it just print the mesg branch  already created.
     :param gocd_label: Gocd label to fetch the version.
     """
-    version = re.findall(r'^([0-9]+.[0-9]+.[0-9]+).', gocd_label)
+    version = re.findall(r'^([0-9]+.[0-9]+).', gocd_label)
     if not version:
         raise Exception("Please check the label .")
     else:
         last_release_branch_cmd = "git ls-remote --heads origin | grep 'release-*' | tail -1 | grep -E -o 'release-[0-9]+.[0-9]+.[0-9]+'"
         last_release_branch = subprocess.check_output([last_release_branch_cmd], shell=True).decode('ascii').strip()
-        release_branch = "release-{}".format(version[0])
-        patch=re.findall(r'([0-9]+$)',release_branch)
-        if last_release_branch == release_branch or patch[0] != '0':
+        release_branch = "release-{}.0".format(version[0])
+        if last_release_branch == release_branch:
             print("Branch already created")
         else:
             create_release_branch(release_branch)
