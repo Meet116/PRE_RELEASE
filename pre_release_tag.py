@@ -9,15 +9,10 @@ def main():
         deploy_to = "_" + os.environ['DEPLOY_TO'].upper()
         branch_name= os.environ['BRANCH']
         gocd_label = os.environ['GO_PIPELINE_LABEL']
-        master_merge=os.getenv('MASTER_MERGE','false').upper()
         if not branch_name:
             raise Exception("Branch name not set in env variable. Please check.")
         if deploy_to in ["_MY", "_MY2"]:
-            if master_merge == 'TRUE':
-                if not branch_name:
-                    raise Exception("Branch name not set in env variable. Please check.")
-                else:
-                    merge_master(branch_name)
+            check_master_merge(branch_name)
             release_version=fetch_release_version(gocd_label)
             last_git_tag=check_last_tag(release_version)
             release_mesg=generate_release_mesg(last_git_tag)
@@ -56,17 +51,23 @@ def create_release_branch(release_branch):
     release_branch_push_cmd = "git push origin {}".format(release_branch)
     subprocess.run([release_branch_push_cmd], shell=True, check=True)
 
-def merge_master(branch_name):
+def check_master_merge(branch_name):
     """
-    Merge the branch to the master branch in remote repo.
+    Check the commit id of the release branch and the master branch.
     :param branch_name: Branch name to be merged.
     """
-    checkout_master="git checkout master"
-    subprocess.run([checkout_master], shell=True, check=True)
-    merge_to_master="git merge origin/{}".format(branch_name)
-    subprocess.run([merge_to_master] ,shell=True , check=True)
-    push_to_master="git push origin master"
-    subprocess.run([push_to_master], shell=True, check=True)
+    release_branch_commit_ID_cmd = 'git rev-parse origin/{}'.format(branch_name)
+    release_branch_commit_Id=subprocess.check_output([release_branch_commit_ID_cmd], shell=True).decode('ascii').strip()
+    release_branch_commit_Id = release_branch_commit_Id[:7]
+    if not release_branch_commit_Id:
+        raise Exception("Empty last release branch commit ID. Please check")
+    checkout_master_cmd="git checkout master"
+    subprocess.run([checkout_master_cmd], shell=True, check=True)
+    check_master_cmd ="git log -r master | grep Merge | head -1 |  awk '{print $3}'"
+    check_master=subprocess.check_output([check_master_cmd], shell=True ).decode('ascii').strip()
+    if check_master != release_branch_commit_Id:
+        raise Exception("Please merge the latest updates to master branch")
+
 
 def fetch_release_version(gocd_label) :
     """
