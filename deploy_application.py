@@ -224,14 +224,14 @@ def deploy_staging_my(deploy_env,version_label):
     elif deploy_env == "_STAGING":
         release_branch(version_label)
 
-def release_branch(release_branch,version_label):
+def release_branch(version_label):
     """
     To create the name of the release branch and fetch the version form gocd_label.
     If the branch name already exists in repo it just print the mesg branch  already created.
     :param gocd_label: Gocd label to fetch the version.
     """
     version = re.findall(r'^([0-9]+.[0-9]+).', version_label)
-    if not version_label:
+    if not version:
         raise Exception("Please check the label")
     release_branch_name = "release-{}.0".format(version[0])
     last_release_branch_cmd = "git ls-remote --heads origin | grep 'release-*' | tail -1 | grep -E -o 'release-[0-9]+.[0-9]+.[0-9]+'"
