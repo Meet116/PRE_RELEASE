@@ -215,26 +215,28 @@ def verify_deployed_version(deployed_commit_id):
     print("verify deployed")
 
 def deploy_staging_my(deploy_env,version_label):
-    version = re.findall(r'^([0-9]+.[0-9]+).', version_label)
-    release_branch_name = "release-{}.0".format(version[0])
     if deploy_env in ["_MY", "_MY2"]:
-        check_master_merge(release_branch_name)
+        check_master_merge(version_label)
         release_version = fetch_release_version(version_label)
         last_git_tag = check_last_tag()
         release_mesg = generate_release_mesg(last_git_tag)
         gen_tag(release_version, release_mesg, last_git_tag)
     elif deploy_env == "_STAGING":
-        release_branch(release_branch_name)
+        release_branch(version_label)
 
-def release_branch(release_branch):
+def release_branch(release_branch,version_label):
     """
     To create the name of the release branch and fetch the version form gocd_label.
     If the branch name already exists in repo it just print the mesg branch  already created.
     :param gocd_label: Gocd label to fetch the version.
     """
+    version = re.findall(r'^([0-9]+.[0-9]+).', version_label)
+    if not version_label:
+        raise Exception("Please check the label")
+    release_branch_name = "release-{}.0".format(version[0])
     last_release_branch_cmd = "git ls-remote --heads origin | grep 'release-*' | tail -1 | grep -E -o 'release-[0-9]+.[0-9]+.[0-9]+'"
     last_release_branch = subprocess.check_output([last_release_branch_cmd], shell=True).decode('ascii').strip()
-    if last_release_branch == release_branch:
+    if last_release_branch == release_branch_name:
         print("Branch already created")
     else:
         create_release_branch(release_branch)
@@ -249,11 +251,15 @@ def create_release_branch(release_branch):
     release_branch_push_cmd = "git push origin {}".format(release_branch)
     subprocess.run([release_branch_push_cmd], shell=True, check=True)
 
-def check_master_merge(branch_name):
+def check_master_merge(version_label):
     """
     Check the commit id of the release branch and the master branch.
     :param branch_name: Branch name to be merged.
     """
+    version = re.findall(r'^([0-9]+.[0-9]+).', version_label)
+    if not version_label:
+        raise Exception("Please check the label")
+    branch_name = "release-{}.0".format(version[0])
     release_branch_commit_ID_cmd = 'git rev-parse origin/{}'.format(branch_name)
     release_branch_commit_Id=subprocess.check_output([release_branch_commit_ID_cmd], shell=True).decode('ascii').strip()
     print(release_branch_commit_Id)
