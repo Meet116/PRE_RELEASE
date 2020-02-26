@@ -262,7 +262,6 @@ def check_master_merge(version_label):
     branch_name = "release-{}.0".format(version[0])
     release_branch_commit_ID_cmd = 'git rev-parse origin/{}'.format(branch_name)
     release_branch_commit_Id=subprocess.check_output([release_branch_commit_ID_cmd], shell=True).decode('ascii').strip()
-    print(release_branch_commit_Id)
     if not release_branch_commit_Id:
         raise Exception("Empty last release branch commit ID. Please check")
     checkout_master_cmd="git checkout master"
@@ -270,7 +269,6 @@ def check_master_merge(version_label):
     check_master_cmd ="git branch --contains {} --points-at master".format(release_branch_commit_Id)
     check_master=subprocess.check_output([check_master_cmd], shell=True).decode('ascii').strip()
     if check_master != "* master":
-        print(check_master)
         raise Exception("Please merge the latest updates to master branch")
 
 
