@@ -239,7 +239,7 @@ def release_branch(version_label):
     if last_release_branch == release_branch_name:
         print("Branch already created")
     else:
-        create_release_branch(release_branch)
+        create_release_branch(release_branch_name)
 
 def create_release_branch(release_branch):
     """
