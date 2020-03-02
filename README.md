@@ -19,5 +19,5 @@
     ```
     - Stops the gocd-agent.
     - Purge the gocd-agent.
-    - Install teh gocd-agent.
+    - Install the gocd-agent.
     - Restart the gocd-agent.
