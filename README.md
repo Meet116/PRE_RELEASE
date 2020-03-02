@@ -1,5 +1,5 @@
 # GOCD BACKUP AND RESTORE
-- Switch to the root user to execute the go_backup_restore.sh script
+- Switch to the root user to execute the go_backup_restore.sh script.
 - To take the go-server backup run the bellow command.
     ``` 
     ./go_backup_restore.sh --go_server_backup
