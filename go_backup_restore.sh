@@ -1,4 +1,4 @@
-_#!/bin/bash
+#!/bin/bash
 
 function main()
 {
@@ -13,7 +13,7 @@ function main()
 	  		shift
 	  		go_server_restore $@
 	  		;;
-			--go_agent_restore )
+			--go_agent_reinstall )
 				shift
 				go_agent_reinstall
 				;;
@@ -21,7 +21,7 @@ function main()
 				echo "Usage Options are"
 				echo "--go_server_backup					To take the gocd server backup."
 				echo "--go_server_restore					To restore the gocd server."
-				echo "--go_agent_reinstall					To reinstall the gocd agent."
+				echo "--go_agent_reinstall					To restore the gocd agent."
 				;;
 			* )
 				echo "Unknown optiondo "
@@ -35,7 +35,7 @@ function main()
 function go_server_backup()
 {
 	#Merge the code of go -server backup
-	echo "go-server-backup"
+	echo "go-server-backup $current_version $backup_version"
 }
 
 function go_server_restore()
@@ -46,11 +46,18 @@ function go_server_restore()
   SERVER_BACKUP_DATE=$2
   AWS_ACCESS_KEY=$3
   AWS_SECRET_KEY=$4
-  AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY aws s3 cp s3://$BUCKET_NAME/go-server/serrver-backup/$SERVER_BACKUP_DATE  {DEST_PATH} --recursive
+  AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY aws s3 cp s3://$BUCKET_NAME/go-server/serrver-backup/$SERVER_BACKUP_DATE  /var/lib/gocd/backup/ --recursive
+  current_version=$(dpkg -l go-server | grep -E -o '[0-9]+.[0-9]+.[0-9]+' | head -1)
+  backup_version=$(cat /var/lib/go-server/artifacts/serverBackups/backup_20200227-173849/version.txt | grep -E -o '[0-9]+.[0-9]+.[0-9]+' | head -1)
+  if $current_version != $backup_version
+  then
+  	echo " Please update the gocd version to $backup_version to perform backups."
+  	exit 1
+  fi 	
   export SERVER_INSTALLATION_DIR=/var/lib/go-server
   unzip db.zip -d $SERVER_INSTALLATION_DIR/db/h2db
   chown -R go:go /etc/go
-  chown -R go:go $SERVER_INSTALLATION_DIR/wrapper-config
+  chown -R go:go /usr/share/go-server/wrapper-config
   chown -R go:go $SERVER_INSTALLATION_DIR/db/config.git
   mkdir -p /var/lib/go-server/run
   chown -R go:go /var/lib/go-server/run
@@ -65,10 +72,10 @@ function go_agent_reinstall()
 	#To remove and install the go-agent.
 	service go-agent stop
 	echo "deb https://download.gocd.org /" | sudo tee /etc/apt/sources.list.d/gocd.list
-	apt-get purge go-agent
+	apt-get purge -y go-agent
 	rm -rf /var/log/go-agent/*
 	rm -rf /var/lib/go-agent/*
-	apt-get install go-agent
+	apt-get install -y go-agent
 	service go-agent start
 }
 
