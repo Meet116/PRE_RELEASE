@@ -1,4 +1,4 @@
-#!/bin/bash
+_#!/bin/bash
 
 function main()
 {
@@ -15,13 +15,13 @@ function main()
 	  		;;
 			--go_agent_restore )
 				shift
-				go_agent_restore 
+				go_agent_reinstall
 				;;
 			-h | --help )
 				echo "Usage Options are"
 				echo "--go_server_backup					To take the gocd server backup."
 				echo "--go_server_restore					To restore the gocd server."
-				echo "--go_agent_restore					To restore the gocd agent."
+				echo "--go_agent_reinstall					To reinstall the gocd agent."
 				;;
 			* )
 				echo "Unknown optiondo "
@@ -60,7 +60,7 @@ function go_server_restore()
 }
 
 
-function go_agent_restore()
+function go_agent_reinstall()
 {
 	#To remove and install the go-agent.
 	service go-agent stop
