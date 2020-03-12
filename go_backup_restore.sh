@@ -46,24 +46,21 @@ function go_server_restore()
   SERVER_BACKUP_DATE=$2
   AWS_ACCESS_KEY=$3
   AWS_SECRET_KEY=$4
-  AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY aws s3 cp s3://$BUCKET_NAME/go-server/serrver-backup/$SERVER_BACKUP_DATE  /var/lib/gocd/backup/ --recursive
-  current_version=$(dpkg -l go-server | grep -E -o '[0-9]+.[0-9]+.[0-9]+' | head -1)
-  backup_version=$(cat /var/lib/go-server/artifacts/serverBackups/backup_20200227-173849/version.txt | grep -E -o '[0-9]+.[0-9]+.[0-9]+' | head -1)
-  if $current_version != $backup_version
-  then
-  	echo " Please update the gocd version to $backup_version to perform backups."
-  	exit 1
-  fi 	
+  AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY aws s3 cp s3://$BUCKET_NAME/go-server/server-backup/$SERVER_BACKUP_DATE/  /var/lib/gocd-server/backup/ --recursive
   export SERVER_INSTALLATION_DIR=/var/lib/go-server
+  rm -rf /var/lib/go-server/pipelines/flyweight
   unzip db.zip -d $SERVER_INSTALLATION_DIR/db/h2db
+  chown -R go:go $SERVER_INSTALLATION_DIR/db/h2db
+  unzip config-dir.zip -d /etc/go
   chown -R go:go /etc/go
-  chown -R go:go /usr/share/go-server/wrapper-config
+  unzip wrapper-config-dir.zip -d $SERVER_INSTALLATION_DIR/wrapper-config
+  chown -R go:go $SERVER_INSTALLATION_DIR/wrapper-config
+  unzip config-repo.zip -d $SERVER_INSTALLATION_DIR/db/config.git
   chown -R go:go $SERVER_INSTALLATION_DIR/db/config.git
   mkdir -p /var/lib/go-server/run
   chown -R go:go /var/lib/go-server/run
-  AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY aws s3 cp s3://${BACKUP_BUCKET}/go-server/server-backup/plugins/external/  /var/lib/go-server/plugins/external/ --recursive
-  chown -R go:go /var/lib/go-server/plugins/external
-  service go-server restart
+  rm -rf /var/lib/gocd-server/backup/*
+  service go-server start
 }
 
 
