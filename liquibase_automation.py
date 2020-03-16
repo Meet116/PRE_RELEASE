@@ -14,7 +14,7 @@ def main():
     filename_with_path = file_path + "/" + filename
     if not filename:
         raise FileNotFoundError("File not found please check...")
-    if skip_db == 'False':
+    if skip_db == 'FALSE':
         json_file = 'json_file/' + os.environ['JSON_FILE']
         check_file_status(json_file, filename, filename_with_path)
         execute_db(filename_with_path)
