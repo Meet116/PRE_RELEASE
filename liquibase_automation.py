@@ -8,19 +8,22 @@ def main():
     skip_db = os.getenv('SKIP_DB', 'true').upper()
     gocd_label = os.environ['GO_PIPELINE_LABEL']
     version = re.findall(r'^([0-9]+.[0-9]+.[0-9]+).', gocd_label)
-    file_path = "SQL/"
+    file_path = "SQL"
     filename_cmd = 'find {} -name "*{}*" -print | cut -d "/" -f2'.format(file_path, version[0])
     filename = subprocess.check_output([filename_cmd], shell=True).decode('ascii').strip()
+    print(filename)
     filename_with_path = file_path + "/" + filename
+    print(skip_db)
     if not filename:
         raise FileNotFoundError("File not found please check...")
     if skip_db == 'FALSE':
+        print("hi")
         json_file = 'json_file/' + os.environ['JSON_FILE']
-        check_file_status(json_file, filename, filename_with_path)
-        execute_db(filename_with_path)
+        check_file_status(version[0], json_file, filename, filename_with_path)
+       # execute_db(filename_with_path)
 
 
-def check_file_status(json_file, filename, filename_with_path):
+def check_file_status(version, json_file, filename, filename_with_path):
     """
     To check the file is new or not
     :param json_file: json file name
@@ -31,7 +34,7 @@ def check_file_status(json_file, filename, filename_with_path):
         data = json.load(f)
         filename_in_json = data["filename"]
     if filename != filename_in_json:
-        new_file_found(json_file, filename)
+        new_file_found(version, json_file, filename)
         prepend_liquibase_format(json_file, filename_with_path)
         upload_to_s3(filename_with_path)
     else:
@@ -39,7 +42,7 @@ def check_file_status(json_file, filename, filename_with_path):
         check_difference(json_file, filename, filename_with_path)
 
 
-def new_file_found(json_file, filename):
+def new_file_found(version, json_file, filename):
     """
     If the file is new update the json file with new file name and increases the minor by 1 and set patch to 0 in json file.
     :param json_file: json file name with path
@@ -48,10 +51,8 @@ def new_file_found(json_file, filename):
     with open(json_file, 'r') as f:
         data = json.load(f)
         data["filename"] = filename
-        minor = data["changeset"]["id"]["minor"]
-        new_minor = int(minor) + 1
-        data["changeset"]["id"]["minor"] = str(new_minor)
-        data["changeset"]["id"]["patch"] = '0'
+        data["changeset"]["id"]["version"] = version
+        data["changeset"]["id"]["incremental"] = '0'
     with open(json_file, "w") as f:
         f.write(json.dumps(data))
 
@@ -77,10 +78,9 @@ def fetch_id(json_file):
     """
     with open(json_file, 'r') as f:
         data = json.load(f)
-        major = data["changeset"]["id"]["major"]
-        minor = data["changeset"]["id"]["minor"]
-        patch = data["changeset"]["id"]["patch"]
-        id = "{}.{}.{}".format(major, minor, patch)
+        version = data["changeset"]["id"]["version"]
+        incremental = data["changeset"]["id"]["incremental"]
+        id = "{}.{}".format(version, incremental)
         author = data["changeset"]["author"]
     return " \n--changeset {}:{}\n".format(author, id)
 
@@ -115,10 +115,11 @@ def update_json(json_file):
     """
     with open(json_file, 'r') as f:
         data = json.load(f)
-        old_patch = data["changeset"]["id"]["patch"]
-        new_patch = int(old_patch) + 1
-        data["changeset"]["id"]["patch"] = str(new_patch)
-    with open("changeset.json_file", "w") as f:
+        incremental = data["changeset"]["id"]["incremental"]
+        new_incremental = int(incremental) + 1
+        print(new_incremental)
+        data["changeset"]["id"]["incremental"] = str(new_incremental)
+    with open(json_file, "w") as f:
         f.write(json.dumps(data))
 
 
