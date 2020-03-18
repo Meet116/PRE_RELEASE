@@ -1,3 +1,6 @@
+# To automate the mysql scripts with liquibase.
+
+
 import json
 import subprocess
 import os
@@ -7,76 +10,121 @@ import re
 def main():
     skip_db = os.getenv('SKIP_DB', 'true').upper()
     gocd_label = os.environ['GO_PIPELINE_LABEL']
-    version = re.findall(r'^([0-9]+.[0-9]+.[0-9]+).', gocd_label)
-    file_path = "SQL"
-    filename_cmd = 'find {} -name "*{}*" -print | cut -d "/" -f2'.format(file_path, version[0])
-    filename = subprocess.check_output([filename_cmd], shell=True).decode('ascii').strip()
-    print(filename)
-    filename_with_path = file_path + "/" + filename
-    print(skip_db)
-    if not filename:
-        raise FileNotFoundError("File not found please check...")
+    version = re.findall(r'^([0-9]+.[0-9]+.[0-9]+).', gocd_label) or re.findall(r'^(sprint)*', gocd_label)
+    sql_local_path = os.environ['SQL_FILE_PATH']
+    aws_access_key = os.environ['ACCESS_KEY']
+    aws_secret_key = os.environ['SECRET_KEY']
+    bucket_name = os.environ['BUCKET_NAME']
+    bucket_folder = os.environ['BUCKET_FOLDER']
+    jsonfile = "ecv-release/database/sql/liquibase-changelog.json"
     if skip_db == 'FALSE':
-        print("hi")
-        json_file = 'json_file/' + os.environ['JSON_FILE']
-        check_file_status(version[0], json_file, filename, filename_with_path)
-       # execute_db(filename_with_path)
-
-
-def check_file_status(version, json_file, filename, filename_with_path):
-    """
-    To check the file is new or not
-    :param json_file: json file name
-    :param filename: new file name
-    :param filename_with_path: new file with path
-    """
-    with open(json_file, 'r') as f:
-        data = json.load(f)
-        filename_in_json = data["filename"]
-    if filename != filename_in_json:
-        new_file_found(version, json_file, filename)
-        prepend_liquibase_format(json_file, filename_with_path)
-        upload_to_s3(filename_with_path)
+        check_json_file(aws_access_key, aws_secret_key, bucket_name, jsonfile, bucket_folder)
+        if version[0] == 'sprint':
+            find_file = "ls -Art {} | tail -n 1".format(sql_local_path)
+            filename = subprocess.check_output([find_file], shell=True).decode('ascii').strip()
+            semantic_version = fetch_semantic_version(filename)
+            check_file(sql_local_path, aws_access_key, aws_secret_key, bucket_name, jsonfile, semantic_version,
+                       filename, bucket_folder)
+        else:
+            filename_cmd = 'find {} -name "*{}*" -print | cut -d "/" -f2'.format(sql_local_path, version[0])
+            filename = subprocess.check_output([filename_cmd], shell=True).decode('ascii').strip()
+            check_file(sql_local_path, aws_access_key, aws_secret_key, bucket_name, jsonfile, version[0], filename,
+                       bucket_folder)
     else:
-        fetch_from_s3(filename)
-        check_difference(json_file, filename, filename_with_path)
+        print("Skipping execution of database")
 
 
-def new_file_found(version, json_file, filename):
+def check_json_file(aws_access_key, aws_secret_key, bucket_name, jsonfile, bucket_folder):
     """
-    If the file is new update the json file with new file name and increases the minor by 1 and set patch to 0 in json file.
-    :param json_file: json file name with path
-    :param filename: sql file name
+    Checks json file present on local or not if not then it pull from s3 storage.
+    :param aws_access_key: Aws access key.
+    :param aws_secret_key: Aws secret key.
+    :param bucket_name: S3 bucket name.
+    :param jsonfile: json file name with path
+    :param bucket_folder: bucket folder.
     """
-    with open(json_file, 'r') as f:
+    if not os.path.isfile(jsonfile):
+        fetch_json_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp s3://{}/{}/liquibase-changelog.json  ecv-releases/databases/sql/liquibase-changelog.json".format(
+            aws_access_key, aws_secret_key, bucket_name, bucket_folder)
+        subprocess.run([fetch_json_cmd], shell=True, check=True)
+
+
+def check_file(sql_local_path, aws_access_key, aws_secret_key, bucket_name, jsonfile, semantic_version, filename,
+               bucket_folder):
+    """
+    Check the file it is new or old one.
+    :param sql_local_path: Sql local file path.
+    :param aws_access_key: Aws access key.
+    :param aws_secret_key: Aws secret key.
+    :param bucket_name: S3 bucket name.
+    :param jsonfile: jsonfile with path.
+    :param semantic_version: semantic version format.
+    :param filename: sql filename.
+    :param bucket_folder: bucket folder path
+    """
+    fetch_sql_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp s3://{}/{}/{}/{} .".format(
+        aws_access_key, aws_secret_key, bucket_name, bucket_folder, semantic_version, filename)
+    fetch_sql_file = subprocess.check_output([fetch_sql_file_cmd], shell=True).decode('ascii').strip()
+    sql_file_with_path = sql_local_path + "/" + filename
+    if not fetch_sql_file:
+        liquibase_sql_file_cmd = "cp {} liquibase-{}".format(sql_file_with_path, filename)
+        liquibase_sql_file = subprocess.check_output([liquibase_sql_file_cmd], shell=True).decode('ascii').strip()
+        update_json_new_file(jsonfile, semantic_version)
+        prepend_liquibase_format(jsonfile, liquibase_sql_file)
+    else:
+        liquibase_sql_file = "liquibase-{}".format(filename)
+        fetch_liquibase_file(aws_access_key, aws_secret_key, liquibase_sql_file, bucket_name, semantic_version,
+                             bucket_folder)
+        check_difference(jsonfile, liquibase_sql_file, sql_file_with_path, filename)
+    execute_liquibase(liquibase_sql_file)
+    upload_to_s3(aws_access_key, aws_secret_key, bucket_name, sql_file_with_path, semantic_version, liquibase_sql_file,
+                 bucket_folder)
+
+
+def fetch_semantic_version(filename):
+    """
+    Fetch the semantic format from the filename.
+    :param filename: sql file name.
+    :return: semantic version
+    """
+    version = re.findall(r'-([0-9]+.[0-9]+.[0-9]+).*', filename)
+    return version[0]
+
+
+def update_json_new_file(jsonfile, fetch_version):
+    """
+    Update the json file if new file found
+    :param jsonfile: json file with path
+    :param fetch_version: semantic version
+    """
+    with open(jsonfile, 'r') as f:
         data = json.load(f)
-        data["filename"] = filename
-        data["changeset"]["id"]["version"] = version
+        data["changeset"]["id"]["version"] = fetch_version
         data["changeset"]["id"]["incremental"] = '0'
-    with open(json_file, "w") as f:
+    with open(jsonfile, "w") as f:
         f.write(json.dumps(data))
 
 
-def prepend_liquibase_format(json_file, filename_with_path):
+def prepend_liquibase_format(jsonfile, liquibase_sql_file):
     """
-    If the file is run for the first time prepend the liquibase executable format into it.
-    :param json_file: json file name with path
-    :param filename_with_path: sql file name with path
+    Prepend the liquibase format in the liquibase sql file.
+    :param jsonfile: json filename with path.
+    :param liquibase_sql_file: liquibase file name
     """
-    changeset = fetch_id(json_file)
-    with open(filename_with_path, 'r') as f:
+    changeset = fetch_id(jsonfile)
+    with open(liquibase_sql_file, 'r') as f:
         data = f.read()
-    with open(filename_with_path, 'w') as f:
+    with open(liquibase_sql_file, 'w') as f:
         f.write("--liquibase formatted sql {} \n".format(changeset) + data)
 
 
-def fetch_id(json_file):
+def fetch_id(jsonfile):
     """
-    fetch the id and author name from the json file and create the message to insert in the file.
-    :param json_file: json file name
-    :return: changeset message for eg:- --changeset author:1.X.X
+    Fetch the changeset id from jsonfile
+    :param jsonfile: jsonfile with path
+    :return: changeset id mesg.
     """
-    with open(json_file, 'r') as f:
+    with open(jsonfile, 'r') as f:
         data = json.load(f)
         version = data["changeset"]["id"]["version"]
         incremental = data["changeset"]["id"]["incremental"]
@@ -85,94 +133,101 @@ def fetch_id(json_file):
     return " \n--changeset {}:{}\n".format(author, id)
 
 
-def check_difference(json_file, filename, filename_with_path):
+def fetch_liquibase_file(aws_access_key, aws_secret_key, liquibase_sql_file, bucket_name, semantic_version,
+                         bucket_folder):
     """
-    To get the line number from which the file is changed.
-    :param json_file: json file name with path
+    If the file is old then fetch the liquibase file from the aws s3 bucket.
+    :param aws_access_key: Aws access key
+    :param aws_secret_key: Aws secret key
+    :param liquibase_sql_file: Liquibase sql file name.
+    :param bucket_name: S3 bucket name.
+    :param semantic_version: Semantic version
+    :param bucket_folder: S3 bucket folder path
+    """
+    liquibase_sql_file = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp s3://{}//{}/liquibase/{} .".format(
+        aws_access_key, aws_secret_key, bucket_name, bucket_folder, semantic_version, liquibase_sql_file, )
+    subprocess.run([liquibase_sql_file], shell=True, check=True)
+
+
+def check_difference(jsonfile, liquibase_sql_file, sql_file_with_path, filename):
+    """
+    Checks which new line add to the sql file , of the file reruns.
+    :param jsonfile: json file with path
+    :param liquibase_sql_file: liquibase file name.
+    :param sql_file_with_path: sql file with path
     :param filename: sql file name
-    :param filename_with_path: sql file name with path
     """
-    dif_cmd = 'diff -wB S3/{} {} | grep "^[0-9]+*" | grep -E -o "[A-Za-z]+[0-9]+*" | grep -E -o "[0-9]+"'.format(
-        filename, filename_with_path)
-    dif = subprocess.check_output([dif_cmd], shell=True).decode('ascii').strip()
-    dif = dif.split('\n')
-    for i in range(len(dif)):
-        if i == 0:
-            value = int(dif[0]) - 1
-            update_json(json_file)
-            edit_file_with_changeset(value, filename_with_path, json_file)
-        else:
-            value = int(dif[i]) + (i * 2) - 1
-            update_json(json_file)
-            edit_file_with_changeset(value, filename_with_path, json_file)
-    upload_to_s3(filename_with_path)
+    check_diff_cmd = "grep -Fxvf {} {}".format(filename, sql_file_with_path)
+    diff = subprocess.check_output([check_diff_cmd], shell=True).decode('ascii').strip()
+    if diff:
+        update_json(jsonfile)
+        append_changes(diff, liquibase_sql_file, jsonfile)
 
 
-def update_json(json_file):
+def update_json(jsonfile):
     """
-    Update the json file and increment the patch by 1.
-    :param json_file: json file name with path
+    Update the json file and increment the incremental by 1.
+    :param jsonfile: json file name with path
     """
-    with open(json_file, 'r') as f:
+    with open(jsonfile, 'r') as f:
         data = json.load(f)
         incremental = data["changeset"]["id"]["incremental"]
         new_incremental = int(incremental) + 1
         print(new_incremental)
         data["changeset"]["id"]["incremental"] = str(new_incremental)
-    with open(json_file, "w") as f:
+    with open(jsonfile, "w") as f:
         f.write(json.dumps(data))
 
 
-def edit_file_with_changeset(line_index, filename_with_path, json_file):
+def append_changes(diff, liquibase_sql_file, jsonfile):
     """
-    Edit the file add the changeset id and author in the sql file
-    :param line_index: On which line the file is changed
-    :param filename_with_path: sql file name with path
-    :param json_file: json file name
+    Append the changes in the liquibase file with the changeset id and author name .
+    :param diff: diff in the file
+    :param liquibase_sql_file: liquibase file name
+    :param jsonfile: json file with path
     """
-    f = open(filename_with_path, "r")
-    contents = f.readlines()
-    f.close()
-    message = fetch_id(json_file)
-    print(line_index)
-    contents.insert(int(line_index), message)
-    f = open(filename_with_path, "w")
-    contents = "".join(contents)
-    f.write(contents)
+    changeset_id = fetch_id(jsonfile)
+    f = open(liquibase_sql_file, 'a')
+    f.write('\n' + changeset_id + '\n' + diff)
     f.close()
 
 
-def upload_to_s3(filename_with_path):
+def execute_liquibase(liquibase_sql_file):
     """
-    To upload the updated file to the S# bucket
-    :param filename_with_path: sql file name with path
+    Execute the liquibase command.
+    :param liquibase_sql_file:  liquibase file name
     """
-    print("Upload to s3." + filename_with_path)
-
-
-def fetch_from_s3(filename):
-    """
-    To fetch the file from the s3 bucket
-    :param filename: sql file name
-    """
-    print("Fetch file from s3" + filename)
-
-
-def execute_db(filename_with_path):
-    """
-    Execute the liquibase command for database.
-    :param filename_with_path: sql file name with path
-    """
-
-    # URL filename and db name to be change
-    url = os.environ['DB_URL']
-    db_name = os.environ['DB_NAME']
-    if not url or not filename_with_path:
+    deploy_env = "_" + os.environ['DEPLOY_TO'].upper()
+    url = os.environ['URL' + deploy_env]
+    if not url or not liquibase_sql_file:
         raise ValueError(" Filename or database url empty")
-    # --url format to be changed and classpath also according to the installation
+    # Change the class path as per liquibase installation
     liquibase_command = "liquibase --changeLogFile={} --url jdbc:mysql://{}/{} --classpath=/usr/apps/Liquibase-3.8.6-bin/liquibase/liquibase.jar update".format(
-        filename_with_path, url, db_name)
+        liquibase_sql_file, url)
     subprocess.run([liquibase_command], shell=True, check=True)
+
+
+def upload_to_s3(aws_access_key, aws_secret_key, bucket_name, sql_file_with_path, semantic_version, liquibase_sql_file,
+                 bucket_folder):
+    """
+    Upload json file , sql file and liquibase sql file on S3 bucket.
+    :param aws_access_key: Aws access key
+    :param aws_secret_key: Aws secret key
+    :param bucket_name: S3 bucket name
+    :param sql_file_with_path: sql file with path
+    :param semantic_version: semantic version
+    :param liquibase_sql_file: liquibase file name
+    :param bucket_folder: bucker folder path
+    """
+    upload_json_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp ecv-releases/databases/sql/liquibase-changelog.json s3://{}/{}/".format(
+        aws_access_key, aws_secret_key, bucket_name, bucket_folder)
+    subprocess.run([upload_json_file_cmd], shell=True, check=True)
+    upload_sql_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp {} s3://{}/{}/{}/".format(
+        aws_access_key, aws_secret_key, sql_file_with_path, bucket_name, bucket_folder, semantic_version)
+    subprocess.run([upload_sql_file_cmd], shell=True, check=True)
+    upload_liquibase_sql_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp {} s3://{}/{}/{}/liquibase/".format(
+        aws_access_key, aws_secret_key, liquibase_sql_file, bucket_name, bucket_folder, semantic_version)
+    subprocess.run([upload_liquibase_sql_file_cmd], shell=True, check=True)
 
 
 if __name__ == "__main__":
