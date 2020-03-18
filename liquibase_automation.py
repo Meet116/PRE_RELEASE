@@ -202,7 +202,7 @@ def execute_liquibase(liquibase_sql_file):
     if not url or not liquibase_sql_file:
         raise ValueError(" Filename or database url empty")
     # Change the class path as per liquibase installation
-    liquibase_command = "liquibase --changeLogFile={} --url jdbc:mysql://{}/{} --classpath=/usr/apps/Liquibase-3.8.6-bin/liquibase/liquibase.jar update".format(
+    liquibase_command = "liquibase --changeLogFile={} --url {} --classpath=/usr/apps/Liquibase-3.8.6-bin/liquibase/liquibase.jar update".format(
         liquibase_sql_file, url)
     subprocess.run([liquibase_command], shell=True, check=True)
 
