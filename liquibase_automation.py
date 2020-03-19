@@ -64,11 +64,12 @@ def check_file(sql_local_path, aws_access_key, aws_secret_key, bucket_name, json
     """
     fetch_sql_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp s3://{}/{}/{}/{} .".format(
         aws_access_key, aws_secret_key, bucket_name, bucket_folder, semantic_version, filename)
-    fetch_sql_file = subprocess.check_output([fetch_sql_file_cmd], shell=True).decode('ascii').strip()
+    subprocess.run([fetch_sql_file_cmd], shell=True)
     sql_file_with_path = sql_local_path + "/" + filename
-    if not fetch_sql_file:
+    if not os.path.exists(filename):
         liquibase_sql_file_cmd = "cp {} liquibase-{}".format(sql_file_with_path, filename)
-        liquibase_sql_file = subprocess.check_output([liquibase_sql_file_cmd], shell=True).decode('ascii').strip()
+        subprocess.check_output([liquibase_sql_file_cmd], shell=True).decode('ascii').strip()
+        liquibase_sql_file = "liquibase-{}".format(filename)
         update_json_new_file(jsonfile, semantic_version)
         prepend_liquibase_format(jsonfile, liquibase_sql_file)
     else:
@@ -217,7 +218,7 @@ def upload_to_s3(aws_access_key, aws_secret_key, bucket_name, sql_file_with_path
     :param sql_file_with_path: sql file with path
     :param semantic_version: semantic version
     :param liquibase_sql_file: liquibase file name
-    :param bucket_folder: bucker folder path
+    :param bucket_folder: bucket folder path
     """
     upload_json_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp ecv-releases/databases/sql/liquibase-changelog.json s3://{}/{}/".format(
         aws_access_key, aws_secret_key, bucket_name, bucket_folder)
@@ -228,6 +229,14 @@ def upload_to_s3(aws_access_key, aws_secret_key, bucket_name, sql_file_with_path
     upload_liquibase_sql_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp {} s3://{}/{}/{}/liquibase/".format(
         aws_access_key, aws_secret_key, liquibase_sql_file, bucket_name, bucket_folder, semantic_version)
     subprocess.run([upload_liquibase_sql_file_cmd], shell=True, check=True)
+    fetch_date = "date +'%d-%m-%Y-%H:%M'"
+    current_date = subprocess.check_output([fetch_date], shell=True).decode('ascii').strip()
+    liquibase_backup_file_cmd = "cp {} {}-{}".format(liquibase_sql_file, current_date, liquibase_sql_file)
+    subprocess.run([liquibase_backup_file_cmd], shell=True, check=True)
+    liquibase_backup_sql_file = "{}-{}".format(current_date, liquibase_sql_file)
+    upload_liquibase_backup_sql_file_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp {} s3://{}/{}/{}/liquibase/".format(
+        aws_access_key, aws_secret_key, liquibase_backup_sql_file, bucket_name, bucket_folder, semantic_version)
+    subprocess.run([upload_liquibase_backup_sql_file_cmd], shell=True, check=True)
 
 
 if __name__ == "__main__":
