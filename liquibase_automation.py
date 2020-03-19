@@ -16,7 +16,7 @@ def main():
     aws_secret_key = os.environ['SECRET_KEY']
     bucket_name = os.environ['BUCKET_NAME']
     bucket_folder = os.environ['BUCKET_FOLDER']
-    jsonfile = "ecv-release/database/sql/liquibase-changelog.json"
+    jsonfile = "json_file/liquibase-changelog.json"
     if skip_db == 'FALSE':
         check_json_file(aws_access_key, aws_secret_key, bucket_name, jsonfile, bucket_folder)
         if version[0] == 'sprint':
@@ -44,6 +44,7 @@ def check_json_file(aws_access_key, aws_secret_key, bucket_name, jsonfile, bucke
     :param bucket_folder: bucket folder.
     """
     if not os.path.isfile(jsonfile):
+
         fetch_json_cmd = "AWS_ACCESS_KEY_ID = {} AWS_SECRET_ACCESS_KEY = {} aws s3 cp s3://{}/{}/liquibase-changelog.json  ecv-releases/databases/sql/liquibase-changelog.json".format(
             aws_access_key, aws_secret_key, bucket_name, bucket_folder)
         subprocess.run([fetch_json_cmd], shell=True, check=True)
@@ -174,7 +175,6 @@ def update_json(jsonfile):
         data = json.load(f)
         incremental = data["changeset"]["id"]["incremental"]
         new_incremental = int(incremental) + 1
-        print(new_incremental)
         data["changeset"]["id"]["incremental"] = str(new_incremental)
     with open(jsonfile, "w") as f:
         f.write(json.dumps(data))
